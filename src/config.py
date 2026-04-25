@@ -58,6 +58,7 @@ class AppConfig:
     google_credentials: dict[str, Any]
     headless: bool
     debug_dump: bool
+    slack_webhook_url: str | None = None
 
 
 def load_google_credentials() -> dict[str, Any]:
@@ -114,6 +115,7 @@ def load_app_config() -> AppConfig:
         google_credentials=load_google_credentials(),
         headless=_env_bool("HEADLESS", True),
         debug_dump=_env_bool("DEBUG_DUMP", False),
+        slack_webhook_url=_env("SLACK_WEBHOOK_URL", default=None) or None,
     )
 
 

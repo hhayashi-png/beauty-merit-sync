@@ -36,6 +36,7 @@ jobs:
           SPREADSHEET_ID: "1aykK8ll0upbVoJnJJrXBp_cAXBovyI6hc4XzoI8GZ10"
           SHEET_NAME: "予約情報csv"
           HEADLESS: "true"
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python -m src.main
 
       - name: Upload debug artifacts on failure
