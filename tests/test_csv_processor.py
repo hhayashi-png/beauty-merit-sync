@@ -61,8 +61,11 @@ def _make_dummy_data_row(marker: str) -> list[str]:
     return [f"{marker}_{i}" for i in range(27)]
 
 
-def test_build_rows_first_store_includes_header(tmp_path: Path, mapping):
-    """1店舗目のみヘッダー行を出力、2店舗目以降はデータ行のみ"""
+def test_build_rows_skips_all_csv_headers(tmp_path: Path, mapping):
+    """
+    全店舗で CSV ヘッダー行はスキップされ、データ行のみ出力される。
+    (スプシ側に固定ヘッダーが既にあるため)
+    """
     # 1店舗目: LIME渋谷(YAML上位)
     p1 = tmp_path / "reserve_ハーフ_ヒ_ーリンク_LIME_渋谷_2026-04-01.csv"
     _write_cp932_csv(p1, [EXPECTED_HEADER, _make_dummy_data_row("渋谷A"), _make_dummy_data_row("渋谷B")])
@@ -73,15 +76,18 @@ def test_build_rows_first_store_includes_header(tmp_path: Path, mapping):
 
     rows = build_rows_for_sheet([p2, p1], mapping)  # 入力順は意図的に逆転
 
-    # 期待: [LIME渋谷ヘッダー, LIME渋谷A, LIME渋谷B, Belle大宮X]
-    assert len(rows) == 4
-    assert rows[0][0] == "LIME渋谷"
-    assert rows[0][1:] == EXPECTED_HEADER  # 1店舗目はヘッダー
-    assert rows[1][0] == "LIME渋谷" and rows[1][1].startswith("渋谷A")
-    assert rows[2][0] == "LIME渋谷" and rows[2][1].startswith("渋谷B")
-    assert rows[3][0] == "Belle大宮" and rows[3][1].startswith("大宮X")
-    # 2店舗目はヘッダー行が含まれない
-    assert not any(r[1:] == EXPECTED_HEADER for r in rows[3:])
+    # 期待: [LIME渋谷A, LIME渋谷B, Belle大宮X](ヘッダー行は一切含まれない)
+    assert len(rows) == 3
+    assert rows[0][0] == "LIME渋谷" and rows[0][1].startswith("渋谷A")
+    assert rows[1][0] == "LIME渋谷" and rows[1][1].startswith("渋谷B")
+    assert rows[2][0] == "Belle大宮" and rows[2][1].startswith("大宮X")
+
+    # CSVヘッダー値("予約者名"等)が出力に含まれていないこと
+    assert not any(r[1:] == EXPECTED_HEADER for r in rows), \
+        "CSVヘッダー行はどの店舗でも出力されてはならない"
+    # 期待ヘッダーの先頭値("予約者名")が B列(index 1)に登場しないこと
+    assert not any(r[1] == "予約者名" for r in rows), \
+        "B列にCSVヘッダー値が紛れ込んでいる"
 
 
 def test_build_rows_order_follows_yaml(tmp_path: Path, mapping):
@@ -114,16 +120,18 @@ def test_build_rows_all_data_rows_have_store_name(tmp_path: Path, mapping):
 
 
 def test_build_rows_empty_file_skipped(tmp_path: Path, mapping):
-    """空ファイルはスキップされ、他の店舗は正常処理"""
+    """空ファイルはスキップされ、他の店舗のデータ行のみが出力される"""
     p_empty = tmp_path / "reserve_ハーフ_ヒ_ーリンク_LIME_渋谷_2026-04-01.csv"
     p_ok = tmp_path / "reserve__ハーフ_ヒ_ーリンク__ニキヒ_ケア_韓国肌管理Belle_大宮店_2026-04-01.csv"
     p_empty.write_bytes(b"")
     _write_cp932_csv(p_ok, [EXPECTED_HEADER, _make_dummy_data_row("大宮")])
 
     rows = build_rows_for_sheet([p_empty, p_ok], mapping)
-    # 空ファイルがスキップされたため、Belle大宮 が実質1店舗目になり、ヘッダー行が含まれる
+    # 出力は Belle大宮 のデータ行 1件のみ(CSVヘッダー行は含まれない)
+    assert len(rows) == 1
     assert rows[0][0] == "Belle大宮"
-    assert rows[0][1:] == EXPECTED_HEADER
+    assert rows[0][1].startswith("大宮")
+    assert rows[0][1:] != EXPECTED_HEADER
 
 
 def test_build_rows_no_data_raises(tmp_path: Path, mapping):

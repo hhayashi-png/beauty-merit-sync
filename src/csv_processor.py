@@ -4,9 +4,8 @@ ZIP を展開し、各店舗 CSV を読んで Google スプレッドシート書
 
 出力ルール(仕様):
   - A列: 店舗名
-  - B列以降: CSV の内容(27カラム)
-  - 1 店舗目のみ CSV のヘッダー行も書き込む(A列=店舗名)
-  - 2 店舗目以降はヘッダー行を除いたデータ行のみ
+  - B列以降: CSV のデータ行(27カラム)
+  - 全店舗で CSV のヘッダー行はスキップ(スプシ側に既に固定ヘッダーが入っているため)
   - 店舗の並び順は store_mapping.yml の stores 定義順
 """
 
@@ -88,8 +87,8 @@ def build_rows_for_sheet(
     """
     CSVファイル群をスプレッドシート書き込み用の2次元配列に変換する。
 
-    - 1店舗目のみ: [店舗名] + CSVヘッダー行 + 全データ行
-    - 2店舗目以降: 全データ行のみ(ヘッダー行はスキップ)
+    - 全店舗で CSV のヘッダー行(rows[0])はスキップ
+    - データ行(rows[1:])のみ A列に店舗名を付与して出力
     - 店舗順は store_mapping.yml の定義順
     """
     # 店舗名の解決 → (store_name, path) のリスト
@@ -107,8 +106,7 @@ def build_rows_for_sheet(
     resolved.sort(key=lambda x: (mapping.store_order_index(x[0]), x[1].name))
 
     result: List[List[str]] = []
-    header_written = False  # 「書き込み済みの実質1店舗目」があるか
-    effective_idx = 0       # スキップ後の実質的な出力順
+    effective_idx = 0  # 実際に処理した店舗の通し番号(空ファイルスキップ後)
     for store_name, csv_path in resolved:
         try:
             rows = _read_csv(csv_path)
@@ -121,18 +119,12 @@ def build_rows_for_sheet(
             continue
 
         header = rows[0]
-        data_rows = rows[1:]
+        data_rows = rows[1:]  # ヘッダー行は出力しない(スプシ側に固定ヘッダーがあるため)
 
         _validate_header(csv_path.name, header)
 
         effective_idx += 1
-        if not header_written:
-            # 実質1店舗目のみヘッダー行を出力(A列に店舗名付与)
-            result.append([store_name] + header)
-            header_written = True
-            logger.info(f"[1店舗目] {store_name}: ヘッダー行 + {len(data_rows)}データ行")
-        else:
-            logger.info(f"[{effective_idx}店舗目] {store_name}: {len(data_rows)}データ行")
+        logger.info(f"[{effective_idx}店舗目] {store_name}: {len(data_rows)}データ行")
 
         for row in data_rows:
             result.append([store_name] + row)
