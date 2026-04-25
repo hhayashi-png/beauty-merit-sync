@@ -1,0 +1,50 @@
+name: Daily Beauty Merit Sync
+
+on:
+  schedule:
+    # 毎朝9時 JST = UTC 0時
+    - cron: '0 0 * * *'
+  workflow_dispatch:   # 手動実行も可能
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run sync script
+        env:
+          BMERIT_LOGIN_ID: ${{ secrets.BMERIT_LOGIN_ID }}
+          BMERIT_PASSWORD: ${{ secrets.BMERIT_PASSWORD }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          SPREADSHEET_ID: "1aykK8ll0upbVoJnJJrXBp_cAXBovyI6hc4XzoI8GZ10"
+          SHEET_NAME: "予約情報csv"
+          HEADLESS: "true"
+        run: python -m src.main
+
+      - name: Upload debug artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-${{ github.run_id }}
+          path: |
+            debug/
+            *.log
+          retention-days: 7
+          if-no-files-found: ignore

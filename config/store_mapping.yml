@@ -1,0 +1,65 @@
+# 店舗名マッピング設定
+#
+# 【評価ルール】
+# - CSV ファイル名(拡張子除いた文字列)に、match.all のキーワードがすべて含まれれば
+#   そのルールにマッチしたとみなし、name を店舗名として採用する
+# - stores は上から順に評価され、最初にマッチしたものが採用される
+# - 複数店舗にマッチしうる場合(例: "Belle" と "Belle大宮" の "大宮")は
+#   より具体的なものを上に記述すること
+# - シート書き込み時の店舗の並び順もこのリストの定義順になる
+#
+# 【店舗追加の手順】
+# 1. 新しい CSV ファイル名サンプルを確認
+# 2. 下の stores: に name + match.all のキーワードを追加
+# 3. ローカルで tests/test_csv_processor.py を実行して検証
+
+stores:
+  - name: "LIME渋谷"
+    match:
+      all: ["LIME", "渋谷"]
+
+  - name: "LIME新宿三丁目"
+    match:
+      all: ["LIME", "新宿三丁目"]
+
+  - name: "LIME池袋東口"
+    match:
+      all: ["LIME", "池袋東口"]
+
+  - name: "Belle大宮"
+    match:
+      all: ["Belle", "大宮"]
+
+  - name: "Belle北千住"
+    match:
+      all: ["Belle", "北千住"]
+
+  - name: "Belle川崎"
+    match:
+      all: ["Belle", "川崎"]
+
+  - name: "Belle柏"
+    match:
+      all: ["Belle", "柏"]
+
+  - name: "Belle西船橋"
+    match:
+      all: ["Belle", "西船橋"]
+
+  - name: "Belle錦糸町"
+    match:
+      all: ["Belle", "錦糸町"]
+
+  - name: "Belle横浜"
+    match:
+      all: ["Belle", "横浜"]
+
+  - name: "Belle日本橋"
+    match:
+      all: ["Belle", "日本橋"]
+
+# マッチングルールに該当しなかった場合の挙動
+fallback:
+  # true : ファイル名(拡張子なし)をそのまま店舗名として使う
+  # false: 例外を投げて処理を中断する
+  use_filename_as_name: true

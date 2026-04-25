@@ -1,0 +1,47 @@
+# 環境変数・認証情報(絶対にコミットしない)
+.env
+*.env
+!.env.example
+
+# JSON ファイルは原則すべて無視(GCPサービスアカウント鍵の流出防止)
+# プロジェクト内に意図的にコミットしたい JSON があれば個別に !path/to/file.json で許可する
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Playwright
+playwright-report/
+test-results/
+.playwright/
+
+# デバッグ・一時ファイル
+debug/
+downloads/
+tmp/
+*.zip
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
