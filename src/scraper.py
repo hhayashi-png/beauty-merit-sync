@@ -64,14 +64,19 @@ class Selectors:
     # TODO: 要実サイト確認 — メニューからのリンクテキスト
     RESERVATION_MENU_TEXTS = ["予約ダウンロード", "予約DL", "予約CSVダウンロード"]
 
-    # TODO: 要実サイト確認 — 「当月」ボタン(対象月=当月のとき優先される近道UI)
+    # b-merit.jp 仕様(実サイト確認済み 2026-04-25):
+    #   対象年月は <select name="month"> の単一プルダウン。
+    #   option の value は "YYYY-MM" 形式(例: "2026-04", "2026-05")。
+    #   デフォルトは当月、未来 3 ヶ月分まで選択可能(=翌月も常に選べる)。
+    MONTH_BMERIT_SELECT = 'select[name="month"]'
+
+    # 念のためのフォールバック群(他バージョン UI 用)
     MONTH_CURRENT_CLICK = [
         'input[type="radio"][value="current"]',
         'label:has-text("当月")',
         'button:has-text("当月")',
         'text=当月',
     ]
-    # TODO: 要実サイト確認 — 「翌月」ボタン(対象月=翌月のとき優先される近道UI)
     MONTH_NEXT_CLICK = [
         'input[type="radio"][value="next"]',
         'label:has-text("翌月")',
@@ -80,7 +85,7 @@ class Selectors:
     ]
     # 任意年月の指定UI(年・月別 select / 単一 select / input[type=month])
     MONTH_YEAR_SELECT = 'select[name*="year"]'
-    MONTH_MONTH_SELECT = 'select[name*="month"]'
+    MONTH_MONTH_SELECT = 'select[name*="month"]:not([name="month"])'  # 単独 name="month" は MONTH_BMERIT_SELECT で扱う
     MONTH_YM_SELECT = 'select[name*="ym"], select[name*="yearmonth"]'
     MONTH_INPUT = 'input[type="month"], input[name*="target_month"], input[name*="ym"]'
 
@@ -211,12 +216,23 @@ def _set_target_month(page: Page, year: int, month: int, month_kind: str = "curr
     """
     対象年月を画面に設定する。
     month_kind: "current"(当月) / "next"(翌月) / "any"(任意年月)
-      - "current"/"next" の場合、近道UI(当月/翌月ボタン)があればそれを優先
-      - 近道UIが無ければ任意年月選択UIへフォールバック
     """
-    label = {"current": "当月", "next": "翌月"}.get(month_kind, f"{year}-{month:02d}")
+    target_value = f"{year}-{month:02d}"
+    label = {"current": "当月", "next": "翌月"}.get(month_kind, target_value)
 
-    # A) 近道UI(当月/翌月)
+    # ★ A) b-merit 仕様(最優先): <select name="month"> に "YYYY-MM" 値の option
+    try:
+        sel = page.query_selector(Selectors.MONTH_BMERIT_SELECT)
+        if sel:
+            sel.select_option(target_value)
+            logger.info(f"{label}設定(b-merit月select): {target_value}")
+            # 選択が確実に反映されるまで少し待機
+            page.wait_for_timeout(300)
+            return
+    except Exception as e:
+        logger.warning(f"b-merit月select失敗({target_value}): {e} — フォールバックを試行")
+
+    # B) 近道UI(当月/翌月)
     if month_kind == "current":
         if _click_first(page, Selectors.MONTH_CURRENT_CLICK, "当月選択"):
             return
@@ -224,34 +240,34 @@ def _set_target_month(page: Page, year: int, month: int, month_kind: str = "curr
         if _click_first(page, Selectors.MONTH_NEXT_CLICK, "翌月選択"):
             return
 
-    # B) 年・月 select が別々
+    # C) 年・月 select が別々
     try:
         year_sel = page.query_selector(Selectors.MONTH_YEAR_SELECT)
         month_sel = page.query_selector(Selectors.MONTH_MONTH_SELECT)
         if year_sel and month_sel:
             year_sel.select_option(str(year))
             month_sel.select_option(str(month))
-            logger.info(f"{label}設定(年月select): {year}-{month:02d}")
+            logger.info(f"{label}設定(年月select): {target_value}")
             return
     except Exception as e:
         logger.warning(f"年月select失敗: {e}")
 
-    # C) 単一 select: "YYYY-MM"
+    # D) 単一 select: "YYYY-MM"(汎用)
     try:
         ym_sel = page.query_selector(Selectors.MONTH_YM_SELECT)
         if ym_sel:
-            ym_sel.select_option(f"{year}-{month:02d}")
-            logger.info(f"{label}設定(ym select): {year}-{month:02d}")
+            ym_sel.select_option(target_value)
+            logger.info(f"{label}設定(ym select): {target_value}")
             return
     except Exception as e:
         logger.warning(f"ym select失敗: {e}")
 
-    # D) input[type=month] / text input
+    # E) input[type=month] / text input
     try:
         inp = page.query_selector(Selectors.MONTH_INPUT)
         if inp:
-            inp.fill(f"{year}-{month:02d}")
-            logger.info(f"{label}設定(input): {year}-{month:02d}")
+            inp.fill(target_value)
+            logger.info(f"{label}設定(input): {target_value}")
             return
     except Exception as e:
         logger.warning(f"month input失敗: {e}")
