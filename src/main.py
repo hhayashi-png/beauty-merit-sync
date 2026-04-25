@@ -1,4 +1,4 @@
-"""エントリポイント。CSV取得 → パース → スプレッドシート反映"""
+"""エントリポイント。当月+翌月の予約データを取得し、スプシに反映"""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ import traceback
 from pathlib import Path
 
 from .config import load_app_config, load_store_mapping
-from .csv_processor import build_rows_for_sheet, extract_zip
+from .csv_processor import build_rows_from_multiple_zips
 from .logger import get_logger
-from .scraper import download_reservations_zip
+from .scraper import download_reservations_for_two_months
 from .sheet_writer import write_to_sheet
 
 logger = get_logger("main")
@@ -49,23 +49,24 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix="bmerit_") as tmp:
             tmp_path = Path(tmp)
 
-            with _StepTimer("Step 1: ZIPダウンロード"):
-                zip_path = download_reservations_zip(
+            with _StepTimer("Step 1: 当月+翌月のZIPダウンロード"):
+                zip_paths = download_reservations_for_two_months(
                     login_id=cfg.bmerit_login_id,
                     password=cfg.bmerit_password,
                     save_dir=tmp_path / "zip",
                     headless=cfg.headless,
                     debug_dump=cfg.debug_dump,
                 )
+                logger.info(f"取得 ZIP 数: {len(zip_paths)}")
 
-            with _StepTimer("Step 2: ZIP展開"):
-                csv_files = extract_zip(zip_path, tmp_path / "extracted")
-                logger.info(f"CSVファイル数: {len(csv_files)}")
+            with _StepTimer("Step 2: ZIP展開 + CSV集計(cp932 ファイル名対応)"):
+                data_rows = build_rows_from_multiple_zips(
+                    zip_paths=zip_paths,
+                    mapping=mapping,
+                    work_dir=tmp_path / "extracted",
+                )
 
-            with _StepTimer("Step 3: CSV集計"):
-                data_rows = build_rows_for_sheet(csv_files, mapping)
-
-            with _StepTimer("Step 4: スプレッドシート書き込み"):
+            with _StepTimer("Step 3: スプレッドシート書き込み"):
                 write_to_sheet(
                     credentials_json=cfg.google_credentials,
                     spreadsheet_id=cfg.spreadsheet_id,

@@ -26,8 +26,30 @@ CSV_ENCODING = "cp932"  # ビューティーメリット CSV 固定仕様
 
 # ── ZIP 展開 ────────────────────────────────────
 
+def _decode_zip_filename(info: zipfile.ZipInfo) -> str:
+    """
+    ZIPエントリのファイル名を正しくデコードする。
+
+    ビューティーメリットの ZIP は cp932(Shift_JIS)エンコードのファイル名を、
+    UTF-8 フラグ(汎用フラグ 0x800)を立てずに格納している。
+    Python の zipfile はそのとき cp437 として decode してしまうため、
+    まず cp437 で encode し直してから cp932 で decode する。
+    """
+    # UTF-8 フラグが立っていれば既に正しい
+    if info.flag_bits & 0x800:
+        return info.filename
+    try:
+        return info.filename.encode("cp437").decode("cp932")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        # 復号できなければそのまま返す(fallback)
+        return info.filename
+
+
 def extract_zip(zip_path: Path | str, dest_dir: Path | str) -> List[Path]:
-    """ZIP を dest_dir に展開し、展開された CSV ファイルパスのリストを返す"""
+    """
+    ZIP を dest_dir に展開し、展開された CSV ファイルパスのリストを返す。
+    cp932 ファイル名(b-merit.jp の ZIP)に対応。
+    """
     zip_path = Path(zip_path)
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -37,16 +59,38 @@ def extract_zip(zip_path: Path | str, dest_dir: Path | str) -> List[Path]:
 
     extracted: List[Path] = []
     with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(dest_dir)
-        for name in zf.namelist():
-            if name.endswith("/"):
+        for info in zf.infolist():
+            if info.is_dir():
                 continue
-            if not name.lower().endswith(".csv"):
+            decoded_name = _decode_zip_filename(info)
+            # CSV のみ対象
+            if not decoded_name.lower().endswith(".csv"):
                 continue
-            extracted.append(dest_dir / name)
+            target = dest_dir / decoded_name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as src, open(target, "wb") as dst:
+                dst.write(src.read())
+            extracted.append(target)
 
     logger.info(f"ZIP展開完了: {len(extracted)}件のCSV ({zip_path} → {dest_dir})")
     return extracted
+
+
+def extract_zips(
+    zip_paths: List[Path | str],
+    dest_dir: Path | str,
+) -> List[Path]:
+    """
+    複数のZIPを順番に展開し、CSVファイルパス全体を返す。
+    同名ファイルの衝突を避けるため、各ZIPごとにサブディレクトリへ展開する。
+    """
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    all_csvs: List[Path] = []
+    for i, zp in enumerate(zip_paths):
+        sub = dest_dir / f"zip_{i:02d}"
+        all_csvs.extend(extract_zip(zp, sub))
+    return all_csvs
 
 
 # ── CSV 読み込み ────────────────────────────────
@@ -124,7 +168,10 @@ def build_rows_for_sheet(
         _validate_header(csv_path.name, header)
 
         effective_idx += 1
-        logger.info(f"[{effective_idx}店舗目] {store_name}: {len(data_rows)}データ行")
+        logger.info(
+            f"[CSV {effective_idx}/{len(resolved)}] 店舗={store_name} "
+            f"ファイル={csv_path.name}: {len(data_rows)}データ行"
+        )
 
         for row in data_rows:
             result.append([store_name] + row)
@@ -134,3 +181,23 @@ def build_rows_for_sheet(
 
     logger.info(f"集計完了: {len(result)}行を生成(店舗数: {len(resolved)})")
     return result
+
+
+def build_rows_from_multiple_zips(
+    zip_paths: List[Path | str],
+    mapping: StoreMapping,
+    work_dir: Path | str,
+) -> List[List[str]]:
+    """
+    複数ZIPを展開して、全CSVを縦連結し、スプシ書き込み用の2次元配列を返す。
+
+    並び順:
+      - 店舗の並びは store_mapping.yml の定義順(YAML順ソート)
+      - 同じ店舗で複数のZIPに該当 CSV が存在する場合(当月+翌月など)、
+        与えられた zip_paths の順番(=展開先 zip_00, zip_01, ...)で先に来たものが上になる。
+        build_rows_for_sheet 内のソートが
+        (店舗順, ファイルパス) で安定するため、ZIP の順序が
+        当月→翌月であれば 当月→翌月の順に並ぶ。
+    """
+    csv_files = extract_zips(zip_paths, work_dir)
+    return build_rows_for_sheet(csv_files, mapping)
